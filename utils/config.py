@@ -2,6 +2,7 @@ import configparser
 import os
 import re
 import shutil
+import socket
 import sys
 
 
@@ -39,6 +40,7 @@ class ConfigManager:
     def __init__(self):
         self.config = None
         self.load()
+        self.override_config_with_env()
 
     def __getattr__(self, name, *args, **kwargs):
         return getattr(self.config, name, *args, **kwargs)
@@ -84,19 +86,26 @@ class ConfigManager:
     @property
     def ipv_type_prefer(self):
         return [
-            type.strip().lower()
-            for type in self.config.get(
-                "Settings", "ipv_type_prefer", fallback="auto"
+            ipv_type_value.lower()
+            for ipv_type in self.config.get(
+                "Settings", "ipv_type_prefer", fallback=""
             ).split(",")
+            if (ipv_type_value := ipv_type.strip())
         ]
 
     @property
     def ipv4_num(self):
-        return self.config.getint("Settings", "ipv4_num", fallback=15)
+        try:
+            return self.config.getint("Settings", "ipv4_num", fallback=5)
+        except:
+            return ""
 
     @property
     def ipv6_num(self):
-        return self.config.getint("Settings", "ipv6_num", fallback=15)
+        try:
+            return self.config.getint("Settings", "ipv6_num", fallback=5)
+        except:
+            return ""
 
     @property
     def ipv6_support(self):
@@ -105,6 +114,7 @@ class ConfigManager:
     @property
     def ipv_limit(self):
         return {
+            "all": self.urls_limit,
             "ipv4": self.ipv4_num,
             "ipv6": self.ipv6_num,
         }
@@ -112,13 +122,13 @@ class ConfigManager:
     @property
     def origin_type_prefer(self):
         return [
-            origin.strip().lower()
+            origin_value.lower()
             for origin in self.config.get(
                 "Settings",
                 "origin_type_prefer",
                 fallback="",
             ).split(",")
-            if origin.strip().lower()
+            if (origin_value := origin.strip())
         ]
 
     @property
@@ -140,6 +150,8 @@ class ConfigManager:
     @property
     def source_limits(self):
         return {
+            "all": self.urls_limit,
+            "local": self.local_num,
             "hotel": self.hotel_num,
             "multicast": self.multicast_num,
             "subscribe": self.subscribe_num,
@@ -157,6 +169,14 @@ class ConfigManager:
     @property
     def min_resolution_value(self):
         return get_resolution_value(self.min_resolution)
+
+    @property
+    def max_resolution(self):
+        return self.config.get("Settings", "max_resolution", fallback="1920x1080")
+
+    @property
+    def max_resolution_value(self):
+        return get_resolution_value(self.max_resolution)
 
     @property
     def urls_limit(self):
@@ -181,10 +201,6 @@ class ConfigManager:
     @property
     def open_m3u_result(self):
         return self.config.getboolean("Settings", "open_m3u_result", fallback=True)
-
-    @property
-    def open_keep_all(self):
-        return self.config.getboolean("Settings", "open_keep_all", fallback=False)
 
     @property
     def open_subscribe(self):
@@ -223,23 +239,25 @@ class ConfigManager:
     @property
     def open_method(self):
         return {
+            "epg": self.open_epg,
+            "local": self.open_local,
             "subscribe": self.open_subscribe,
             "hotel": self.open_hotel,
             "multicast": self.open_multicast,
             "online_search": self.open_online_search,
-            "hotel_fofa": self.open_hotel_fofa,
-            "hotel_foodie": self.open_hotel_foodie,
-            "multicast_fofa": self.open_multicast_fofa,
-            "multicast_foodie": self.open_multicast_foodie,
+            "hotel_fofa": self.open_hotel and self.open_hotel_fofa,
+            "hotel_foodie": self.open_hotel and self.open_hotel_foodie,
+            "multicast_fofa": self.open_multicast and self.open_multicast_fofa,
+            "multicast_foodie": self.open_multicast and self.open_multicast_foodie,
         }
 
     @property
-    def open_use_old_result(self):
-        return self.config.getboolean("Settings", "open_use_old_result", fallback=True)
+    def open_history(self):
+        return self.config.getboolean("Settings", "open_history", fallback=True)
 
     @property
-    def open_sort(self):
-        return self.config.getboolean("Settings", "open_sort", fallback=True)
+    def open_speed_test(self):
+        return self.config.getboolean("Settings", "open_speed_test", fallback=True)
 
     @property
     def open_update_time(self):
@@ -270,17 +288,13 @@ class ConfigManager:
         return self.config.getint("Settings", "request_timeout", fallback=10)
 
     @property
-    def sort_timeout(self):
-        return self.config.getint("Settings", "sort_timeout", fallback=10)
-
-    @property
-    def open_proxy(self):
-        return self.config.getboolean("Settings", "open_proxy", fallback=False)
+    def speed_test_timeout(self):
+        return self.config.getint("Settings", "speed_test_timeout", fallback=10)
 
     @property
     def open_driver(self):
-        return not os.environ.get("LITE") and self.config.getboolean(
-            "Settings", "open_driver", fallback=True
+        return self.config.getboolean(
+            "Settings", "open_driver", fallback=False
         )
 
     @property
@@ -300,8 +314,32 @@ class ConfigManager:
         return self.config.getboolean("Settings", "open_empty_category", fallback=True)
 
     @property
+    def app_host(self):
+        env = os.getenv("APP_HOST")
+        if env:
+            return env
+        cfg = self.config.get("Settings", "app_host", fallback="http://localhost")
+        if cfg and cfg != "http://localhost":
+            return cfg
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                ip = s.getsockname()[0]
+            finally:
+                s.close()
+            if ip and not ip.startswith("127."):
+                scheme = "http"
+                if "://" in cfg:
+                    scheme = cfg.split("://", 1)[0]
+                return f"{scheme}://{ip}"
+        except Exception:
+            pass
+        return cfg
+
+    @property
     def app_port(self):
-        return os.environ.get("APP_PORT") or self.config.getint("Settings", "app_port", fallback=8000)
+        return os.getenv("APP_PORT") or self.config.getint("Settings", "app_port", fallback=8000)
 
     @property
     def open_supply(self):
@@ -315,6 +353,74 @@ class ConfigManager:
     def time_zone(self):
         return self.config.get("Settings", "time_zone", fallback="Asia/Shanghai")
 
+    @property
+    def open_local(self):
+        return self.config.getboolean("Settings", "open_local", fallback=True)
+
+    @property
+    def local_file(self):
+        return self.config.get("Settings", "local_file", fallback="config/local.txt")
+
+    @property
+    def local_num(self):
+        return self.config.getint("Settings", "local_num", fallback=10)
+
+    @property
+    def speed_test_filter_host(self):
+        return self.config.getboolean("Settings", "speed_test_filter_host", fallback=False)
+
+    @property
+    def cdn_url(self):
+        return self.config.get("Settings", "cdn_url", fallback="")
+
+    @property
+    def open_rtmp(self):
+        return not os.getenv("GITHUB_ACTIONS") and self.config.getboolean("Settings", "open_rtmp", fallback=True)
+
+    @property
+    def open_headers(self):
+        return self.config.getboolean("Settings", "open_headers", fallback=False)
+
+    @property
+    def open_epg(self):
+        return self.config.getboolean("Settings", "open_epg", fallback=True)
+
+    @property
+    def speed_test_limit(self):
+        return self.config.getint("Settings", "speed_test_limit", fallback=10)
+
+    @property
+    def location(self):
+        return [
+            l.strip()
+            for l in self.config.get(
+                "Settings", "location", fallback=""
+            ).split(",")
+            if l.strip()
+        ]
+
+    @property
+    def isp(self):
+        return [
+            i.strip()
+            for i in self.config.get(
+                "Settings", "isp", fallback=""
+            ).split(",")
+            if i.strip()
+        ]
+
+    @property
+    def update_interval(self):
+        return self.config.getfloat("Settings", "update_interval", fallback=12)
+
+    @property
+    def logo_url(self):
+        return self.config.get("Settings", "logo_url", fallback="")
+
+    @property
+    def logo_type(self):
+        return self.config.get("Settings", "logo_type", fallback="png")
+
     def load(self):
         """
         Load the config
@@ -323,12 +429,23 @@ class ConfigManager:
         user_config_path = resource_path("config/user_config.ini")
         default_config_path = resource_path("config/config.ini")
 
-        config_files = [user_config_path, default_config_path]
+        # user config overwrites default config
+        config_files = [default_config_path, user_config_path]
         for config_file in config_files:
             if os.path.exists(config_file):
                 with open(config_file, "r", encoding="utf-8") as f:
                     self.config.read_file(f)
-                break
+
+    def override_config_with_env(self):
+        for section in self.config.sections():
+            for key in self.config[section]:
+                section_key = f"{section}_{key}"
+                candidates = (key, key.upper(), section_key, section_key.upper())
+                for env_name in candidates:
+                    env_val = os.getenv(env_name)
+                    if env_val is not None:
+                        self.config.set(section, key, env_val)
+                        break
 
     def set(self, section, key, value):
         """
@@ -351,13 +468,13 @@ class ConfigManager:
         with open(user_config_path, "w", encoding="utf-8") as configfile:
             self.config.write(configfile)
 
-    def copy(self):
+    def copy(self, path="config"):
         """
         Copy config files to current directory
         """
-        dest_folder = os.path.join(os.getcwd(), "config")
+        dest_folder = os.path.join(os.getcwd(), path)
         try:
-            src_dir = resource_path("config")
+            src_dir = resource_path(path)
             if os.path.exists(src_dir):
                 if not os.path.exists(dest_folder):
                     os.makedirs(dest_folder, exist_ok=True)
