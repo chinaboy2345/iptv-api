@@ -1,10 +1,11 @@
 <div align="center">
-  <img src="./static/images/logo.png" alt="logo"/>
-  <h1 align="center">IPTV-API</h1>
+  <img src="./static/images/logo.svg" alt="IPTV-API logo"  width="120" height="120"/>
 </div>
 
-📺 IPTV live-source auto-update platform — 🤖 fully automated collection, filtering, speed-testing, and generation
-pipeline 🚀. Supports extensive customization; paste the resulting URL into your player to watch
+<p>
+    <br>
+    ⚡️ IPTV live-source automatic update platform — 🤖 fully automated collection, filtering, speed-testing, and generation 🚀. Supports extensive personalized configuration; paste the resulting address into a player to watch.
+</p>
 
 <p align="center">
     <br>
